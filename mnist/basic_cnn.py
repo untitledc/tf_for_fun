@@ -10,6 +10,9 @@ CONV_2_FILTER_SIZE = 5
 CONV_2_CHANNEL_N = 64
 CLASS_N = 10
 BATCH_SIZE = 50
+# Not epoch number
+ITERATION_N = 5000
+
 
 def main():
     mnist_data = input_data.read_data_sets('MNIST_data', one_hot=True)
@@ -33,7 +36,7 @@ def main():
         + b_conv1
     )
     # https://www.tensorflow.org/api_docs/python/tf/nn/max_pool
-    h_pool1 = tf.nn.max_pool(h_conv1, ksize=[1, 2, 2, 1], strides=[1, 2, 2 ,1],
+    h_pool1 = tf.nn.max_pool(h_conv1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
                              padding='SAME')
 
     ### Layer 2: Conv
@@ -83,19 +86,58 @@ def main():
     ### Train
     train_step = tf.train.AdamOptimizer(1e-4).minimize(cross_entropy)
 
+    ### Tensorboard summary
+    tf.summary.scalar('cross entropy', cross_entropy)
+    tf.summary.scalar('training accuracy', accuracy)
+    # FIXME: the images across steps are meaningless since input are different
+    #        I should use a testing image
+    tf.summary.image(
+        'L2 activation images (first filter)', h_conv2[:, :, :, 0:1])
+    tf.summary.histogram(
+        'L2 activation degree by filters',
+        tf.reduce_sum(tf.reduce_mean(h_conv2, axis=0), axis=[0, 1]))
+    # XXX: under development?
+    tf.summary.tensor_summary('L2 activation summary', h_conv2)
+    merged_summary = tf.summary.merge_all()
+
+    ### RUN!
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
     with tf.Session(config=config) as sess:
         sess.run(tf.global_variables_initializer())
-        for i in range(10000):
-            batch = mnist_data.train.next_batch(BATCH_SIZE)
-            if i % 100 == 0:
-                train_accuracy = accuracy.eval(feed_dict={
-                    X: batch[0], y: batch[1], keep_prob: 1.0})
-                print('step %d, training accuracy %g' % (i, train_accuracy))
-            train_step.run(
-                feed_dict={X: batch[0], y: batch[1], keep_prob: 0.5})
+        summary_writer = tf.summary.FileWriter('mnist/logs/', sess.graph)
 
+        for i in range(ITERATION_N):
+            batch = mnist_data.train.next_batch(BATCH_SIZE)
+            # print(batch[0][0])
+
+            # monitor
+            if i % 100 == 0:
+                train_accuracy, summary, w1 = sess.run(
+                    [accuracy, merged_summary, W_conv1],
+                    feed_dict={X: batch[0], y: batch[1], keep_prob: 1.0})
+                print('step %d, training accuracy %g' % (i, train_accuracy))
+                # print(w1)
+                summary_writer.add_summary(summary, i)
+
+            if i % 1000 == 0:
+                run_options = tf.RunOptions(
+                    trace_level=tf.RunOptions.FULL_TRACE)
+                run_metadata = tf.RunMetadata()
+            else:
+                run_options = None
+                run_metadata = None
+
+            # gradient descent
+            sess.run(train_step,
+                     feed_dict={X: batch[0], y: batch[1], keep_prob: 0.5},
+                     options=run_options,
+                     run_metadata=run_metadata)
+            if run_metadata:
+                summary_writer.add_run_metadata(run_metadata,
+                                                'step {}'.format(i))
+
+        # predict
         print('test accuracy %g' % accuracy.eval(feed_dict={
             X: mnist_data.test.images, y: mnist_data.test.labels,
             keep_prob: 1.0}))
