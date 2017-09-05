@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
 
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from tensorflow.contrib.data import Dataset
@@ -11,9 +14,8 @@ CONV_1_FILTER_SIZE = 5
 CONV_1_CHANNEL_N = 32
 CONV_2_FILTER_SIZE = 5
 CONV_2_CHANNEL_N = 64
-CLASS_N = 10
 BATCH_SIZE = 64
-EPOCH_N = 10
+EPOCH_N = 5
 
 
 def gen_noise_dataset(mnist_dataset):
@@ -33,7 +35,7 @@ def gen_noise_dataset(mnist_dataset):
     # Expand the original data labels to 11 classes
     orig_y = np.hstack(
         (mnist_dataset.labels,
-         np.zeros(mnist_dataset.num_examples).reshape(-1, 1)))
+         np.zeros((mnist_dataset.num_examples, 1))))
 
     final_dataset = Dataset.from_tensor_slices((
         np.vstack((mnist_dataset.images, noisy_X)),
@@ -47,25 +49,35 @@ def gen_noise_dataset(mnist_dataset):
 
 
 def create_weight_var(shape, initializer=xavier_initializer(seed=1)):
+    """Create TF Variable for weights
+
+    :param shape: shape of the variable
+    :param initializer: (optional) by default, xavier initializer
+    :return: the TF trainable variable
+    """
     return tf.get_variable(name='W', shape=shape, initializer=initializer)
 
 
 def create_bias_var(shape, initializer=tf.zeros_initializer()):
+    """Create TF Variable for bias
+
+    :param shape: shape of the variable
+    :param initializer: (optional) by default, initialize to 0's
+    :return: the TF trainable variable
+    """
     return tf.get_variable(name='b', shape=shape, initializer=initializer)
 
 
-def main():
-    mnist_data = input_data.read_data_sets('MNIST_data', one_hot=True)
-    train_set_10 = Dataset.from_tensor_slices(
-        (mnist_data.train.images, mnist_data.train.labels))
-    train_set_11 = gen_noise_dataset(mnist_data.train)
+def build_cnn_graph(X, keep_prob, class_n):
+    """Build a CNN model using placeholders/input
 
-    print('Done generating dataset')
+    :param X: TF placeholder
+    :param keep_prob: TF placeholder for (1 - dropout rate)
+    :param class_n: class number, int.
+    :return: A dictionary of TF Variables in this CNN model
+    """
 
-    # Input placeholder
-    X = tf.placeholder(tf.float32, shape=(None, 28*28))
     X_image = tf.reshape(X, (-1, 28, 28, 1))
-    y = tf.placeholder(tf.float32, shape=(None, 10))
 
     # Layer 1: Conv
     # https://www.tensorflow.org/api_docs/python/tf/nn/conv2d
@@ -100,14 +112,97 @@ def main():
         W_fc1 = create_weight_var((7*7*CONV_2_CHANNEL_N, 1024))
         b_fc1 = create_bias_var((1, 1024))
     h_fc1 = tf.nn.relu(tf.matmul(h_pool2_flat, W_fc1) + b_fc1)
-    keep_prob = tf.placeholder(tf.float32)
     h_fc1_drop = tf.nn.dropout(h_fc1, keep_prob)
 
     # Layer 4: final layer (for softmax later)
     with tf.variable_scope('fc2'):
-        W_fc2 = create_weight_var((1024, CLASS_N))
-        b_fc2 = create_bias_var((1, CLASS_N))
+        W_fc2 = create_weight_var((1024, class_n))
+        b_fc2 = create_bias_var((1, class_n))
     y_conv = tf.matmul(h_fc1_drop, W_fc2) + b_fc2
+
+    # FIXME: is this a good idea?
+    return {'y_conv': y_conv, 'h_conv2': h_conv2}
+
+
+def get_highact_images(model_var_dict):
+    """
+
+    :param model_var_dict:
+    :return:
+    """
+    # ['conv1/W:0', 'conv1/b:0', 'conv2/W:0', 'conv2/b:0', 'fc1/W:0', 'fc1/b:0',
+    #  'fc2/W:0', 'fc2/b:0']
+    X_image = tf.Variable(np.random.rand(1, 28, 28, 1), dtype=tf.float32)
+
+    # Layer 1: Conv
+    W_conv1 = tf.Variable(model_var_dict['conv1/W:0'], trainable=False)
+    b_conv1 = tf.Variable(model_var_dict['conv1/b:0'], trainable=False)
+    h_conv1 = tf.nn.relu(
+        tf.nn.conv2d(X_image, W_conv1, strides=[1, 1, 1, 1], padding='SAME')
+        + b_conv1
+    )
+    h_pool1 = tf.nn.max_pool(h_conv1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
+                             padding='SAME')
+
+    # Layer 2: Conv
+    W_conv2 = tf.Variable(model_var_dict['conv2/W:0'], trainable=False)
+    b_conv2 = tf.Variable(model_var_dict['conv2/b:0'], trainable=False)
+    h_conv2 = tf.nn.relu(
+        tf.nn.conv2d(h_pool1, W_conv2, strides=[1, 1, 1, 1], padding='SAME')
+        + b_conv2
+    )
+    h_pool2 = tf.nn.max_pool(h_conv2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
+                             padding='SAME')
+
+    # Layer 3: Fully connected
+    h_pool2_flat = tf.reshape(h_pool2, (-1, 7*7*CONV_2_CHANNEL_N))
+    W_fc1 = tf.Variable(model_var_dict['fc1/W:0'], trainable=False)
+    b_fc1 = tf.Variable(model_var_dict['fc1/b:0'], trainable=False)
+    h_fc1 = tf.nn.relu(tf.matmul(h_pool2_flat, W_fc1) + b_fc1)
+
+    # Layer 4: final layer (for softmax later)
+    W_fc2 = tf.Variable(model_var_dict['fc2/W:0'], trainable=False)
+    b_fc2 = tf.Variable(model_var_dict['fc2/b:0'], trainable=False)
+    y_conv = tf.matmul(h_fc1, W_fc2) + b_fc2
+
+    # define high activations...
+    mean_lc2_degree = tf.reduce_sum(tf.reduce_mean(h_conv2, axis=0),
+                                    axis=[0, 1])
+    optimize_op = tf.train.GradientDescentOptimizer(1e-3)\
+        .minimize(-mean_lc2_degree)
+
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        for i in range(1000):
+            sess.run(optimize_op)
+        high_image = sess.run(X_image)
+
+        plt.imshow(high_image.reshape(28, 28), cmap='gray')
+        plt.savefig('test.png')
+        plt.close()
+
+
+def main(add_negative):
+    mnist_data = input_data.read_data_sets('MNIST_data', one_hot=True)
+    if add_negative:
+        train_set = gen_noise_dataset(mnist_data.train)
+        class_n = 11
+    else:
+        train_set = Dataset.from_tensor_slices(
+            (mnist_data.train.images, mnist_data.train.labels))
+        class_n = 10
+
+    print('Done generating dataset')
+
+    # Input placeholder
+    X = tf.placeholder(tf.float32, shape=(None, 28*28), name='XXX')
+    keep_prob = tf.placeholder(tf.float32)
+    y = tf.placeholder(tf.float32, shape=(None, class_n))
+
+    # Model
+    model_var_dict = build_cnn_graph(X, keep_prob=keep_prob, class_n=class_n)
+    y_conv = model_var_dict['y_conv']
+    h_conv2 = model_var_dict['h_conv2']
 
     # metrics
     cross_entropy = tf.reduce_mean(
@@ -126,10 +221,8 @@ def main():
         tf.reduce_sum(tf.reduce_mean(h_conv2, axis=0), axis=[0, 1]))
     merged_summary = tf.summary.merge_all()
 
-    # print(list(map(lambda t: t.name, tf.trainable_variables())))
-
     # RUN!
-    dataset = train_set_10
+    dataset = train_set
     dataset = dataset.shuffle(buffer_size=8192)
     dataset = dataset.batch(BATCH_SIZE)
     iterator = dataset.make_initializable_iterator()
@@ -150,23 +243,36 @@ def main():
 
                     # monitor
                     if step_i % 100 == 0:
-                        train_accuracy, summary, w1 = sess.run(
-                            [accuracy, merged_summary, W_conv1],
+                        train_accuracy, summary = sess.run(
+                            [accuracy, merged_summary],
                             feed_dict={X: batch_X, y: batch_y, keep_prob: 1.0})
                         print('step {}, training accuracy {}'.format(
                             step_i, train_accuracy))
-                        # print(w1)
                         summary_writer.add_summary(summary, epoch_i)
 
                     step_i += 1
                 except tf.errors.OutOfRangeError:
                     break
 
+        # get model weights
+        trainable_vars = tf.trainable_variables()
+        model_var_dict = dict(zip(
+            map(lambda v: v.name, trainable_vars),
+            sess.run(trainable_vars)
+        ))
+        # print(sorted(model_var_dict.keys()))
+        get_highact_images(model_var_dict)
+
         # predict
+        if add_negative:
+            test_labels = np.hstack(
+                (mnist_data.test.labels,
+                 np.zeros((mnist_data.test.num_examples, 1))))
+        else:
+            test_labels = mnist_data.test.labels
         print('test accuracy %g' % accuracy.eval(feed_dict={
-            X: mnist_data.test.images, y: mnist_data.test.labels,
-            keep_prob: 1.0}))
+            X: mnist_data.test.images, y: test_labels, keep_prob: 1.0}))
 
 
 if __name__ == '__main__':
-    main()
+    main(add_negative=False)
