@@ -15,7 +15,7 @@ CONV_1_CHANNEL_N = 32
 CONV_2_FILTER_SIZE = 5
 CONV_2_CHANNEL_N = 64
 BATCH_SIZE = 64
-EPOCH_N = 1
+EPOCH_N = 5
 
 
 def gen_noise_dataset(mnist_dataset):
@@ -194,24 +194,36 @@ def get_highact_images_bad():
         plt.close()
 
 
-def get_highact_images(tensor_dict, X):
-    h_conv2 = tensor_dict['h_conv2']
-    X_image = tf.Variable(np.random.rand(1, 28, 28, 1), dtype=tf.float32)
+def get_highact_images(degrees_tensor, X, outname, first_n=None):
+    if first_n is None:
+        first_n = degrees_tensor.shape.as_list()[0]
 
-    X_init = np.random.rand(1, 784)
-    lc2_degree = tf.reduce_sum(tf.reduce_mean(h_conv2, axis=0), axis=[0, 1])[0]
-    dlc2_dx = tf.gradients(lc2_degree, X)
-    for i in range(1000):
-        grad_list = tf.get_default_session().run(dlc2_dx, feed_dict={X: X_init})
-        # tf.gradients returns a list of size 1 even when there's one tensor
-        grad = grad_list[0]
-        # gradient 'ascent' for maximizing degree
-        X_init += 0.001 * grad
-        # make it a realistic image rather than scaling afterwards
-        np.clip(X_init, 0.0, 1.0, out=X_init)
+    image_and_scores = []
+    for filter_i in range(first_n):
+        X_init = np.ones((1, 784)) * 0.5
+        degree_tensor = degrees_tensor[filter_i]
+        dlc2_dx = tf.gradients(degree_tensor, X)
+        # gradient ascent to find the argmax input image
+        # FIXME: fixed iteration number: should've used diff < epsilon
+        for i in range(3000):
+            degree, grad_list = tf.get_default_session().run(
+                [degree_tensor, dlc2_dx], feed_dict={X: X_init})
+            # tf.gradients returns a list of size 1 even when there's one tensor
+            grad = grad_list[0]
+            X_init += 0.001 * grad
+            # make it a realistic image rather than scaling afterwards
+            np.clip(X_init, 0.0, 1.0, out=X_init)
+            # if i % 100 == 0:
+            #    print('L2 activation degree: {}'.format(degree))
+        image_and_scores.append((X_init, degree))
+        print('generating image for filter {}'.format(filter_i))
 
-    plt.imshow(X_init.reshape(28, 28), cmap='gray')
-    plt.savefig('test2.png')
+    for i, (im, sc) in enumerate(sorted(image_and_scores, key=lambda t: t[1],
+                                        reverse=True)):
+        plt.subplot(8, int(np.ceil(first_n/8)), i+1)
+        plt.axis('off')
+        plt.imshow(im.reshape(28, 28), cmap='gray')
+    plt.savefig('{}.png'.format(outname))
     plt.close()
 
 
@@ -300,12 +312,15 @@ def main(add_negative):
                 except tf.errors.OutOfRangeError:
                     break
 
-        # get_highact_images_bad()
-        tensor_dict = model_var_dict
-        get_highact_images(tensor_dict, X)
-
         # predict
         predict_data(mnist_data.test, add_negative, accuracy)
+
+        # Visualize: what input images lead to high activation?
+        # get_highact_images_bad()
+        h_conv2 = model_var_dict['h_conv2']
+        degrees = tf.reduce_sum(tf.reduce_mean(h_conv2, axis=0),
+                                axis=[0, 1])
+        get_highact_images(degrees, X, 'max_conv2')
 
 
 if __name__ == '__main__':
