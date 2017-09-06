@@ -15,7 +15,7 @@ CONV_1_CHANNEL_N = 32
 CONV_2_FILTER_SIZE = 5
 CONV_2_CHANNEL_N = 64
 BATCH_SIZE = 64
-EPOCH_N = 5
+EPOCH_N = 1
 
 
 def gen_noise_dataset(mnist_dataset):
@@ -124,15 +124,27 @@ def build_cnn_graph(X, keep_prob, class_n):
     return {'y_conv': y_conv, 'h_conv2': h_conv2}
 
 
-def get_highact_images(model_var_dict):
+def get_highact_images_bad():
+    """Generate an image leading to the highest activation sum
+
+    This function is bad because it is not necessary to build another graph.
     """
 
-    :param model_var_dict:
-    :return:
-    """
+    # get model weights
+    trainable_vars = tf.trainable_variables()
+    model_var_dict = dict(zip(
+        map(lambda v: v.name, trainable_vars),
+        tf.get_default_session().run(trainable_vars)
+    ))
+    # print(sorted(model_var_dict.keys()))
     # ['conv1/W:0', 'conv1/b:0', 'conv2/W:0', 'conv2/b:0', 'fc1/W:0', 'fc1/b:0',
     #  'fc2/W:0', 'fc2/b:0']
+
     X_image = tf.Variable(np.random.rand(1, 28, 28, 1), dtype=tf.float32)
+    # X_image = tf.Variable(np.random.rand(1, 28, 28, 1)*0.2+0.4, dtype=tf.float32)
+    # X_image = tf.Variable(np.ones((1, 28, 28, 1))*0.5, dtype=tf.float32)
+    # X_image = tf.Variable(np.zeros((1, 28, 28, 1)), dtype=tf.float32)
+    # X_image = tf.Variable(X_init, dtype=tf.float32)
 
     # Layer 1: Conv
     W_conv1 = tf.Variable(model_var_dict['conv1/W:0'], trainable=False)
@@ -166,20 +178,54 @@ def get_highact_images(model_var_dict):
     y_conv = tf.matmul(h_fc1, W_fc2) + b_fc2
 
     # define high activations...
-    mean_lc2_degree = tf.reduce_sum(tf.reduce_mean(h_conv2, axis=0),
-                                    axis=[0, 1])
-    optimize_op = tf.train.GradientDescentOptimizer(1e-3)\
-        .minimize(-mean_lc2_degree)
-
+    lc2_degree = tf.reduce_sum(tf.reduce_mean(h_conv2, axis=0), axis=[0, 1])[0]
+    optimize_op = tf.train.GradientDescentOptimizer(1e-3).minimize(-lc2_degree)
+    # grads = tf.train.GradientDescentOptimizer(0.1).compute_gradients(
+    #     -lc2_degree, var_list=X_image)
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
-        for i in range(1000):
+        for _ in range(1000):
             sess.run(optimize_op)
+            # print(sess.run(grads)[0][0].reshape(784)[:5])
         high_image = sess.run(X_image)
 
         plt.imshow(high_image.reshape(28, 28), cmap='gray')
         plt.savefig('test.png')
         plt.close()
+
+
+def get_highact_images(tensor_dict, X):
+    h_conv2 = tensor_dict['h_conv2']
+    X_image = tf.Variable(np.random.rand(1, 28, 28, 1), dtype=tf.float32)
+
+    X_init = np.random.rand(1, 784)
+    lc2_degree = tf.reduce_sum(tf.reduce_mean(h_conv2, axis=0), axis=[0, 1])[0]
+    dlc2_dx = tf.gradients(lc2_degree, X)
+    for i in range(1000):
+        grad_list = tf.get_default_session().run(dlc2_dx, feed_dict={X: X_init})
+        # tf.gradients returns a list of size 1 even when there's one tensor
+        grad = grad_list[0]
+        # gradient 'ascent' for maximizing degree
+        X_init += 0.001 * grad
+        # make it a realistic image rather than scaling afterwards
+        np.clip(X_init, 0.0, 1.0, out=X_init)
+
+    plt.imshow(X_init.reshape(28, 28), cmap='gray')
+    plt.savefig('test2.png')
+    plt.close()
+
+
+def predict_data(mnist_dataset, add_negative, accuracy_op):
+    if add_negative:
+        test_labels = np.hstack(
+            (mnist_dataset.labels,
+             np.zeros((mnist_dataset.num_examples, 1))))
+    else:
+        test_labels = mnist_dataset.labels
+
+    acc = accuracy_op.eval(feed_dict={
+        'X:0': mnist_dataset.images, 'y:0': test_labels, 'keep_prob:0': 1.0})
+    print('test accuracy {:.4f}'.format(acc))
 
 
 def main(add_negative):
@@ -195,9 +241,9 @@ def main(add_negative):
     print('Done generating dataset')
 
     # Input placeholder
-    X = tf.placeholder(tf.float32, shape=(None, 28*28), name='XXX')
-    keep_prob = tf.placeholder(tf.float32)
-    y = tf.placeholder(tf.float32, shape=(None, class_n))
+    X = tf.placeholder(tf.float32, shape=(None, 28*28), name='X')
+    keep_prob = tf.placeholder(tf.float32, name='keep_prob')
+    y = tf.placeholder(tf.float32, shape=(None, class_n), name='y')
 
     # Model
     model_var_dict = build_cnn_graph(X, keep_prob=keep_prob, class_n=class_n)
@@ -254,24 +300,12 @@ def main(add_negative):
                 except tf.errors.OutOfRangeError:
                     break
 
-        # get model weights
-        trainable_vars = tf.trainable_variables()
-        model_var_dict = dict(zip(
-            map(lambda v: v.name, trainable_vars),
-            sess.run(trainable_vars)
-        ))
-        # print(sorted(model_var_dict.keys()))
-        get_highact_images(model_var_dict)
+        # get_highact_images_bad()
+        tensor_dict = model_var_dict
+        get_highact_images(tensor_dict, X)
 
         # predict
-        if add_negative:
-            test_labels = np.hstack(
-                (mnist_data.test.labels,
-                 np.zeros((mnist_data.test.num_examples, 1))))
-        else:
-            test_labels = mnist_data.test.labels
-        print('test accuracy %g' % accuracy.eval(feed_dict={
-            X: mnist_data.test.images, y: test_labels, keep_prob: 1.0}))
+        predict_data(mnist_data.test, add_negative, accuracy)
 
 
 if __name__ == '__main__':
