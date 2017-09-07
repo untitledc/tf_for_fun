@@ -86,7 +86,7 @@ def build_cnn_graph(X, keep_prob, class_n):
     with tf.variable_scope('conv1'):
         W_conv1 = create_weight_var((CONV_1_FILTER_SIZE, CONV_1_FILTER_SIZE,
                                      1, CONV_1_CHANNEL_N))
-        b_conv1 = create_bias_var((1, CONV_1_CHANNEL_N))
+        b_conv1 = create_bias_var([CONV_1_CHANNEL_N])
     h_conv1 = tf.nn.relu(
         tf.nn.conv2d(X_image, W_conv1, strides=[1, 1, 1, 1], padding='SAME')
         + b_conv1
@@ -99,7 +99,7 @@ def build_cnn_graph(X, keep_prob, class_n):
     with tf.variable_scope('conv2'):
         W_conv2 = create_weight_var((CONV_2_FILTER_SIZE, CONV_2_FILTER_SIZE,
                                      CONV_1_CHANNEL_N, CONV_2_CHANNEL_N))
-        b_conv2 = create_bias_var((1, CONV_2_CHANNEL_N))
+        b_conv2 = create_bias_var([CONV_2_CHANNEL_N])
     h_conv2 = tf.nn.relu(
         tf.nn.conv2d(h_pool1, W_conv2, strides=[1, 1, 1, 1], padding='SAME')
         + b_conv2
@@ -112,14 +112,14 @@ def build_cnn_graph(X, keep_prob, class_n):
     h_pool2_flat = tf.reshape(h_pool2, (-1, 7*7*CONV_2_CHANNEL_N))
     with tf.variable_scope('fc1'):
         W_fc1 = create_weight_var((7*7*CONV_2_CHANNEL_N, 1024))
-        b_fc1 = create_bias_var((1, 1024))
+        b_fc1 = create_bias_var([1024])
     h_fc1 = tf.nn.relu(tf.matmul(h_pool2_flat, W_fc1) + b_fc1)
     h_fc1_drop = tf.nn.dropout(h_fc1, keep_prob)
 
     # Layer 4: final layer (for softmax later)
     with tf.variable_scope('fc2'):
         W_fc2 = create_weight_var((1024, class_n))
-        b_fc2 = create_bias_var((1, class_n))
+        b_fc2 = create_bias_var([class_n])
     y_conv = tf.matmul(h_fc1_drop, W_fc2) + b_fc2
 
     # FIXME: is this a good idea?
@@ -130,7 +130,19 @@ def build_cnn_graph(X, keep_prob, class_n):
 
 
 def get_highact_images(degrees_tensor, X, keep_prob, outname, first_n=None,
-                       debug_W_filters=None, debug_b_filters=None):
+                       debug_W_filters=None, debug_b_filters=None,
+                       sort_by_degree=True):
+    """
+
+    :param degrees_tensor:
+    :param X:
+    :param keep_prob:
+    :param outname:
+    :param first_n:
+    :param debug_W_filters:
+    :param debug_b_filters:
+    :return:
+    """
     if first_n is None:
         first_n = degrees_tensor.shape.as_list()[0]
 
@@ -158,12 +170,15 @@ def get_highact_images(degrees_tensor, X, keep_prob, outname, first_n=None,
         if debug_b_filters is not None and debug_W_filters is not None:
             image_and_scores.append((X_init, degree,
                                      debug_W_filters[:, filter_i].reshape(5, 5),
-                                     debug_b_filters[0, filter_i]))
+                                     debug_b_filters[filter_i]))
         else:
             image_and_scores.append((X_init, degree, None, None))
 
-    for i, (im, sc, w, b) in enumerate(
-            sorted(image_and_scores, key=lambda t: t[1], reverse=True)):
+    if sort_by_degree:
+        image_and_scores = sorted(image_and_scores, key=lambda t: t[1],
+                                  reverse=True)
+
+    for i, (im, sc, w, b) in enumerate(image_and_scores):
         plt.subplot(int(np.ceil(first_n/6)), 6*2, i*2+1)
         plt.axis('off')
         plt.title('d:{:.2f}'.format(sc), fontsize=6)
@@ -177,6 +192,7 @@ def get_highact_images(degrees_tensor, X, keep_prob, outname, first_n=None,
             plt.title('w:{:.3f}\nb:{:.3f}'.format(np.sum(w), b), fontsize=6)
             plt.imshow(w, cmap=plt.cm.coolwarm, norm=color_norm)
 
+    # plt.tight_layout()
     plt.savefig('{}.png'.format(outname))
     plt.close()
 
@@ -272,11 +288,13 @@ def main(add_negative):
         # Visualize: what input images lead to high activation?
         debug_W1, debug_b1, debug_W2, debug_b2 = sess.run(
             ['conv1/W:0', 'conv1/b:0', 'conv2/W:0', 'conv2/b:0'])
+        fn_prfx = '11_' if add_negative else '10_'
 
+        # reduce mean axis=0 for eliminate mini-batch dimension
         h_conv1 = model_var_dict['h_conv1']
         degrees = tf.reduce_sum(tf.reduce_mean(h_conv1, axis=0), axis=[0, 1])
         get_highact_images(
-            degrees, X, keep_prob, 'max_conv1', debug_b_filters=debug_b1,
+            degrees, X, keep_prob, fn_prfx+'max_conv1', debug_b_filters=debug_b1,
             debug_W_filters=debug_W1.reshape(-1, CONV_1_CHANNEL_N))
 
         h_conv2 = model_var_dict['h_conv2']
@@ -284,12 +302,17 @@ def main(add_negative):
         # average L2 filter over input (L1) depth when showing in 2D
         debug_W2 = np.mean(debug_W2, axis=2)
         get_highact_images(
-            degrees, X, keep_prob, 'max_conv2', debug_b_filters=debug_b2,
-            debug_W_filters=debug_W2.reshape(-1, CONV_2_CHANNEL_N))
+            degrees, X, keep_prob, fn_prfx+'max_conv2', debug_b_filters=debug_b2,
+            debug_W_filters=debug_W2.reshape(-1, CONV_2_CHANNEL_N), first_n=30)
 
         h_fc1 = model_var_dict['h_fc1']
         degrees = tf.reduce_mean(h_fc1, axis=0)
-        get_highact_images(degrees, X, keep_prob, 'max_fc1', first_n=50)
+        get_highact_images(degrees, X, keep_prob, fn_prfx+'max_fc1', first_n=30)
+
+        y_conv = model_var_dict['y_conv']
+        degrees = tf.reduce_mean(y_conv, axis=0)
+        get_highact_images(degrees, X, keep_prob, fn_prfx+'max_y',
+                           sort_by_degree=False)
 
 
 if __name__ == '__main__':
