@@ -132,15 +132,17 @@ def build_cnn_graph(X, keep_prob, class_n):
 def get_highact_images(degrees_tensor, X, keep_prob, outname, first_n=None,
                        debug_W_filters=None, debug_b_filters=None,
                        sort_by_degree=True):
-    """
+    """Generate a image leading to the highest activation of a filter/neuron
 
-    :param degrees_tensor:
-    :param X:
-    :param keep_prob:
-    :param outname:
-    :param first_n:
-    :param debug_W_filters:
-    :param debug_b_filters:
+    :param degrees_tensor: A 1D Tensor of degrees of interests
+    :param X: TF placeholder from the model graph
+    :param keep_prob: TF placeholder from the model graph
+    :param outname: Filename of the group of result images
+    :param first_n: Pick the first N filters/neurons (not necessarily highest
+                    degree, just the first N indices)
+    :param debug_W_filters: the "W" in np.ndarray of the conv layer
+    :param debug_b_filters: the "b" in np.ndarray of the conv layer
+    :param sort_by_degree: sort the result images or not
     :return:
     """
     if first_n is None:
@@ -198,6 +200,13 @@ def get_highact_images(degrees_tensor, X, keep_prob, outname, first_n=None,
 
 
 def predict_data(mnist_dataset, add_negative, accuracy_op):
+    """Predict a test data set using the metric in a TF operator
+
+    :param mnist_dataset: mnist_data.test
+    :param add_negative: add noisy data in test or not
+    :param accuracy_op: the TF operator for accuracy
+    :return:
+    """
     if add_negative:
         test_labels = np.hstack(
             (mnist_dataset.labels,
