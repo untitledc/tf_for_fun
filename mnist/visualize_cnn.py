@@ -4,7 +4,9 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
+np.random.seed(1)
 import tensorflow as tf
+tf.set_random_seed(1)
 from tensorflow.contrib.data import Dataset
 from tensorflow.contrib.layers import xavier_initializer
 from tensorflow.examples.tutorials.mnist import input_data
@@ -121,108 +123,60 @@ def build_cnn_graph(X, keep_prob, class_n):
     y_conv = tf.matmul(h_fc1_drop, W_fc2) + b_fc2
 
     # FIXME: is this a good idea?
-    return {'y_conv': y_conv, 'h_conv2': h_conv2}
+    return {'y_conv': y_conv,
+            'h_conv1': h_conv1,
+            'h_conv2': h_conv2,
+            'h_fc1': h_fc1}
 
 
-def get_highact_images_bad():
-    """Generate an image leading to the highest activation sum
-
-    This function is bad because it is not necessary to build another graph.
-    """
-
-    # get model weights
-    trainable_vars = tf.trainable_variables()
-    model_var_dict = dict(zip(
-        map(lambda v: v.name, trainable_vars),
-        tf.get_default_session().run(trainable_vars)
-    ))
-    # print(sorted(model_var_dict.keys()))
-    # ['conv1/W:0', 'conv1/b:0', 'conv2/W:0', 'conv2/b:0', 'fc1/W:0', 'fc1/b:0',
-    #  'fc2/W:0', 'fc2/b:0']
-
-    X_image = tf.Variable(np.random.rand(1, 28, 28, 1), dtype=tf.float32)
-    # X_image = tf.Variable(np.random.rand(1, 28, 28, 1)*0.2+0.4, dtype=tf.float32)
-    # X_image = tf.Variable(np.ones((1, 28, 28, 1))*0.5, dtype=tf.float32)
-    # X_image = tf.Variable(np.zeros((1, 28, 28, 1)), dtype=tf.float32)
-    # X_image = tf.Variable(X_init, dtype=tf.float32)
-
-    # Layer 1: Conv
-    W_conv1 = tf.Variable(model_var_dict['conv1/W:0'], trainable=False)
-    b_conv1 = tf.Variable(model_var_dict['conv1/b:0'], trainable=False)
-    h_conv1 = tf.nn.relu(
-        tf.nn.conv2d(X_image, W_conv1, strides=[1, 1, 1, 1], padding='SAME')
-        + b_conv1
-    )
-    h_pool1 = tf.nn.max_pool(h_conv1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
-                             padding='SAME')
-
-    # Layer 2: Conv
-    W_conv2 = tf.Variable(model_var_dict['conv2/W:0'], trainable=False)
-    b_conv2 = tf.Variable(model_var_dict['conv2/b:0'], trainable=False)
-    h_conv2 = tf.nn.relu(
-        tf.nn.conv2d(h_pool1, W_conv2, strides=[1, 1, 1, 1], padding='SAME')
-        + b_conv2
-    )
-    h_pool2 = tf.nn.max_pool(h_conv2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
-                             padding='SAME')
-
-    # Layer 3: Fully connected
-    h_pool2_flat = tf.reshape(h_pool2, (-1, 7*7*CONV_2_CHANNEL_N))
-    W_fc1 = tf.Variable(model_var_dict['fc1/W:0'], trainable=False)
-    b_fc1 = tf.Variable(model_var_dict['fc1/b:0'], trainable=False)
-    h_fc1 = tf.nn.relu(tf.matmul(h_pool2_flat, W_fc1) + b_fc1)
-
-    # Layer 4: final layer (for softmax later)
-    W_fc2 = tf.Variable(model_var_dict['fc2/W:0'], trainable=False)
-    b_fc2 = tf.Variable(model_var_dict['fc2/b:0'], trainable=False)
-    y_conv = tf.matmul(h_fc1, W_fc2) + b_fc2
-
-    # define high activations...
-    lc2_degree = tf.reduce_sum(tf.reduce_mean(h_conv2, axis=0), axis=[0, 1])[0]
-    optimize_op = tf.train.GradientDescentOptimizer(1e-3).minimize(-lc2_degree)
-    # grads = tf.train.GradientDescentOptimizer(0.1).compute_gradients(
-    #     -lc2_degree, var_list=X_image)
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
-        for _ in range(1000):
-            sess.run(optimize_op)
-            # print(sess.run(grads)[0][0].reshape(784)[:5])
-        high_image = sess.run(X_image)
-
-        plt.imshow(high_image.reshape(28, 28), cmap='gray')
-        plt.savefig('test.png')
-        plt.close()
-
-
-def get_highact_images(degrees_tensor, X, outname, first_n=None):
+def get_highact_images(degrees_tensor, X, keep_prob, outname, first_n=None,
+                       debug_W_filters=None, debug_b_filters=None):
     if first_n is None:
         first_n = degrees_tensor.shape.as_list()[0]
 
     image_and_scores = []
     for filter_i in range(first_n):
-        X_init = np.ones((1, 784)) * 0.5
+        print('Generating image for filter {}'.format(filter_i))
+        # X_init = np.ones((1, 784)) * 0.5
+        X_init = np.random.rand(1, 784)
+
         degree_tensor = degrees_tensor[filter_i]
         dlc2_dx = tf.gradients(degree_tensor, X)
         # gradient ascent to find the argmax input image
         # FIXME: fixed iteration number: should've used diff < epsilon
         for i in range(3000):
             degree, grad_list = tf.get_default_session().run(
-                [degree_tensor, dlc2_dx], feed_dict={X: X_init})
+                [degree_tensor, dlc2_dx], feed_dict={X: X_init, keep_prob: 1.0})
             # tf.gradients returns a list of size 1 even when there's one tensor
             grad = grad_list[0]
-            X_init += 0.001 * grad
+            X_init += 0.05 * grad
             # make it a realistic image rather than scaling afterwards
             np.clip(X_init, 0.0, 1.0, out=X_init)
             # if i % 100 == 0:
-            #    print('L2 activation degree: {}'.format(degree))
-        image_and_scores.append((X_init, degree))
-        print('generating image for filter {}'.format(filter_i))
+            #     print('layer activation degree: {}'.format(degree))
 
-    for i, (im, sc) in enumerate(sorted(image_and_scores, key=lambda t: t[1],
-                                        reverse=True)):
-        plt.subplot(8, int(np.ceil(first_n/8)), i+1)
+        if debug_b_filters is not None and debug_W_filters is not None:
+            image_and_scores.append((X_init, degree,
+                                     debug_W_filters[:, filter_i].reshape(5, 5),
+                                     debug_b_filters[0, filter_i]))
+        else:
+            image_and_scores.append((X_init, degree, None, None))
+
+    for i, (im, sc, w, b) in enumerate(
+            sorted(image_and_scores, key=lambda t: t[1], reverse=True)):
+        plt.subplot(int(np.ceil(first_n/6)), 6*2, i*2+1)
         plt.axis('off')
-        plt.imshow(im.reshape(28, 28), cmap='gray')
+        plt.title('d:{:.2f}'.format(sc), fontsize=6)
+        plt.imshow(im.reshape(28, 28), cmap='gray', vmin=0, vmax=1)
+
+        if w is not None and b is not None:
+            plt.subplot(int(np.ceil(first_n/6)), 6*2, i*2+2)
+            plt.axis('off')
+            abs_max = np.max(np.abs(w))
+            color_norm = matplotlib.colors.Normalize(-abs_max, abs_max)
+            plt.title('w:{:.3f}\nb:{:.3f}'.format(np.sum(w), b), fontsize=6)
+            plt.imshow(w, cmap=plt.cm.coolwarm, norm=color_norm)
+
     plt.savefig('{}.png'.format(outname))
     plt.close()
 
@@ -316,11 +270,26 @@ def main(add_negative):
         predict_data(mnist_data.test, add_negative, accuracy)
 
         # Visualize: what input images lead to high activation?
-        # get_highact_images_bad()
+        debug_W1, debug_b1, debug_W2, debug_b2 = sess.run(
+            ['conv1/W:0', 'conv1/b:0', 'conv2/W:0', 'conv2/b:0'])
+
+        h_conv1 = model_var_dict['h_conv1']
+        degrees = tf.reduce_sum(tf.reduce_mean(h_conv1, axis=0), axis=[0, 1])
+        get_highact_images(
+            degrees, X, keep_prob, 'max_conv1', debug_b_filters=debug_b1,
+            debug_W_filters=debug_W1.reshape(-1, CONV_1_CHANNEL_N))
+
         h_conv2 = model_var_dict['h_conv2']
-        degrees = tf.reduce_sum(tf.reduce_mean(h_conv2, axis=0),
-                                axis=[0, 1])
-        get_highact_images(degrees, X, 'max_conv2')
+        degrees = tf.reduce_sum(tf.reduce_mean(h_conv2, axis=0), axis=[0, 1])
+        # average L2 filter over input (L1) depth when showing in 2D
+        debug_W2 = np.mean(debug_W2, axis=2)
+        get_highact_images(
+            degrees, X, keep_prob, 'max_conv2', debug_b_filters=debug_b2,
+            debug_W_filters=debug_W2.reshape(-1, CONV_2_CHANNEL_N))
+
+        h_fc1 = model_var_dict['h_fc1']
+        degrees = tf.reduce_mean(h_fc1, axis=0)
+        get_highact_images(degrees, X, keep_prob, 'max_fc1', first_n=50)
 
 
 if __name__ == '__main__':
