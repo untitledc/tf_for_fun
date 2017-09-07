@@ -285,7 +285,7 @@ def main(add_negative):
                             feed_dict={X: batch_X, y: batch_y, keep_prob: 1.0})
                         print('step {}, training accuracy {}'.format(
                             step_i, train_accuracy))
-                        summary_writer.add_summary(summary, epoch_i)
+                        summary_writer.add_summary(summary, step_i)
 
                     step_i += 1
                 except tf.errors.OutOfRangeError:
