@@ -198,6 +198,8 @@ def get_highact_images(degrees_tensor, X, keep_prob, outname, first_n=None,
     plt.savefig('{}.png'.format(outname))
     plt.close()
 
+    return image_and_scores
+
 
 def predict_data(mnist_dataset, add_negative, accuracy_op):
     """Predict a test data set using the metric in a TF operator
@@ -320,8 +322,12 @@ def main(add_negative):
 
         y_conv = model_var_dict['y_conv']
         degrees = tf.reduce_mean(y_conv, axis=0)
-        get_highact_images(degrees, X, keep_prob, fn_prfx+'max_y',
-                           sort_by_degree=False)
+        img_and_scores = get_highact_images(
+            degrees, X, keep_prob, fn_prfx+'max_y', sort_by_degree=False)
+        for i, (im, sc, w, b) in enumerate(img_and_scores):
+            y_out = sess.run(y_conv, feed_dict={X: im.reshape(1, 28*28),
+                                                keep_prob: 1.0})
+            print('{}: {}'.format(i, np.exp(y_out)/np.sum(np.exp(y_out))))
 
 
 if __name__ == '__main__':
