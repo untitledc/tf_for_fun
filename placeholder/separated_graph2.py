@@ -9,8 +9,11 @@ train_graph = tf.Graph()
 infer_graph = tf.Graph()
 
 
-def build_model(dataset_iterator, mode=ModeKeys.TRAIN):
-    (batch_X, batch_y) = dataset_iterator.get_next()
+def build_model(dataset_iterator=None, test_X_ph=None, mode=ModeKeys.TRAIN):
+    if mode == ModeKeys.INFER and dataset_iterator is None:
+        batch_X = test_X_ph
+    else:
+        (batch_X, batch_y) = dataset_iterator.get_next()
 
     W1 = tf.Variable(np.random.randn(2, 5), name='W1', dtype=tf.float32)
     b1 = tf.Variable(np.zeros(5), name='b1', dtype=tf.float32)
@@ -36,16 +39,14 @@ def build_model(dataset_iterator, mode=ModeKeys.TRAIN):
 
 
 def infer():
-    global novel_data_X, novel_data_y
+    global novel_data_X
     global infer_graph
 
     # 1. Build model structure for inference
     with infer_graph.as_default():
-        dataset = Dataset.from_tensor_slices((novel_data_X, novel_data_y))
-        dataset = dataset.batch(1)
-        iterator = dataset.make_one_shot_iterator()
+        X_placeholder = tf.placeholder(tf.float32, shape=(None, 2))
 
-        _, pred = build_model(iterator, mode=ModeKeys.INFER)
+        _, pred = build_model(test_X_ph=X_placeholder, mode=ModeKeys.INFER)
         saver = tf.train.Saver(tf.global_variables())
 
     with tf.Session(graph=infer_graph) as sess:
@@ -56,11 +57,7 @@ def infer():
         print('  Loaded W1: {}'.format(sess.run('W1:0')))
 
         # 3. predict every data
-        while True:
-            try:
-                print(sess.run(pred))
-            except tf.errors.OutOfRangeError:
-                break
+        print(sess.run(pred, feed_dict={X_placeholder: novel_data_X}))
 
     print('Inference is DONE')
 
@@ -113,6 +110,5 @@ if __name__ == '__main__':
     data_y[np.arange(tmp_y.shape[0]), tmp_y] = 1
 
     novel_data_X = np.array([[3, 0], [2, 2], [-1, -1]], dtype=np.float32)
-    novel_data_y = np.array([[1, 0], [0, 1], [1, 0]], dtype=np.float32)
 
     main()
