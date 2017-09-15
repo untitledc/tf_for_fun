@@ -1,6 +1,8 @@
 # tf_for_fun
 
 ## mnist
-```bash
-$ python -m mnist.visualize_cnn
-```
+Just follow mnist tutorial as a TensorFlow attempt, and try to visualize via maximizing activations
+
+## placeholder
+Simple experiment on eliminating feed_dict
+
