@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
 
 import argparse
-from dataset import get_train_dataset
+from dataset import TrainDataset
+from model import Seq2SeqModel
 import tensorflow as tf
 
 BATCH_SIZE = 4
+EMBEDDING_SIZE = 1024
+HIDDEN_SIZE = 128
 UNK_TOKEN = '<unk>'
 
 
@@ -21,23 +24,29 @@ def parse_args():
 
 
 def main(args):
-    dataset = get_train_dataset(
-        args.source_file, args.target_file,
-        args.source_vocab_file, args.target_vocab_file, batch_size= BATCH_SIZE)
-    iterator = dataset.make_initializable_iterator()
-    (batch_enc_in, batch_dec_in, batch_dec_out) = iterator.get_next()
+    train_graph = tf.Graph()
 
-    with tf.Session() as sess:
+    with train_graph.as_default():
+        dataset = TrainDataset(args.source_file, args.target_file,
+                               args.source_vocab_file, args.target_vocab_file,
+                               batch_size=BATCH_SIZE)
+
+        iterator = dataset.get_tf_dataset().make_initializable_iterator()
+
+        model = Seq2SeqModel(source_vocab_size=dataset.source_vocab_size,
+                             target_vocab_size=dataset.target_vocab_size,
+                             embedding_size=EMBEDDING_SIZE,
+                             hidden_state_size=HIDDEN_SIZE)
+        model.build(iterator)
+
+    with tf.Session(graph=train_graph) as sess:
         sess.run(iterator.initializer)
         sess.run(tf.tables_initializer())
         sess.run(tf.global_variables_initializer())
-        print(sess.run([batch_enc_in, batch_dec_in, batch_dec_out]))
-        print(sess.run([batch_enc_in, batch_dec_in, batch_dec_out]))
-        #print(sess.run([batch_enc_in, batch_dec_in, batch_dec_out]))
-        #print(sess.run([batch_enc_in, batch_dec_in, batch_dec_out]))
-    # embedding
-    # encoder
-    # decoder
+        print(model)
+        print(model.encoder_emb_weight)
+        print(model.encoder_state)
+        print(model.encoder_output)
 
     pass
 
