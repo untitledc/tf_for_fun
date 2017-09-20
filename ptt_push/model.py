@@ -3,7 +3,10 @@
 import tensorflow as tf
 from tensorflow.contrib.learn import ModeKeys
 from tensorflow.contrib.rnn import BasicLSTMCell
+from tensorflow.contrib.seq2seq import BasicDecoder
 from tensorflow.contrib.seq2seq import TrainingHelper
+from tensorflow.contrib.seq2seq import dynamic_decode
+from tensorflow.python.layers.core import Dense
 
 
 class Seq2SeqModel:
@@ -17,6 +20,8 @@ class Seq2SeqModel:
         self._target_dim = target_vocab_size + 3
         self._embedding_dim = embedding_size
         self._hidden_state_size = hidden_state_size
+
+        self._swap_memory_in_train = False
 
     @property
     def encoder_emb_weight(self):
@@ -41,6 +46,14 @@ class Seq2SeqModel:
     @property
     def batch_dec_embed(self):
         return self._batch_dec_embed
+
+    @property
+    def batch_rnn_output(self):
+        return self._final_outputs.rnn_output
+
+    @property
+    def batch_sample_id(self):
+        return self._final_outputs.sample_id
 
     def _build_encoder_embedding(self, batch_in_seq):
         """[batch, time] -> [batch, time, embed]"""
@@ -78,29 +91,46 @@ class Seq2SeqModel:
         encoder_cell = BasicLSTMCell(self._hidden_state_size)
 
         # batch_enc_embed: [batch, time, embed]
-        # encoder_state : [batch, hidden]
+        # encoder_state  : [batch, hidden]
         # encoder_output : [batch, time, hidden]
         encoder_output, encoder_state = tf.nn.dynamic_rnn(
-            encoder_cell, batch_enc_embed, dtype=tf.float32)
+            encoder_cell, inputs=batch_enc_embed, dtype=tf.float32)
         self._encoder_output = encoder_output
         self._encoder_state = encoder_state
 
         return encoder_output, encoder_state
 
-    def _build_decoder(self, encoder_state, batch_dec_embed):
+    def _build_decoder_projection(self):
+        proj_layer = Dense(self._target_dim, use_bias=False,
+                           name="output_projection")
+        self._decoder_proj_layer = proj_layer
+
+        return proj_layer
+
+    def _build_decoder(self, encoder_state, batch_dec_embed, batch_dec_length,
+                       output_projection):
         decoder_cell = BasicLSTMCell(self._hidden_state_size)
 
         # https://www.tensorflow.org/api_guides/python/contrib.seq2seq
         if self._mode == ModeKeys.TRAIN:
-            # XXX: why do we need to pass sequence length to create the helper?
-            # embed shape: [batch, time, embed]
-            # expect input length = embed shape[1] + 1 (due to <SOS>)
-            dec_seq_length = tf.shape(batch_dec_embed)[1] + 1
-            helper = TrainingHelper(batch_dec_embed, dec_seq_length)
-            pass
+            helper = TrainingHelper(inputs=batch_dec_embed,
+                                    sequence_length=batch_dec_length)
+            decoder = BasicDecoder(decoder_cell, helper,
+                                   initial_state=encoder_state,
+                                   output_layer=output_projection)
+
+            # encoder_state  : [batch, hidden]
+            # batch_dec_embed: [batch, time, embed]
+            # final_outputs.rnn_output: [batch, time, hidden (or proj)]
+            # final_outputs.sample_id : [batch, time]
+            final_outputs, _, _ = dynamic_decode(
+                decoder, swap_memory=self._swap_memory_in_train)
+
+            self._final_outputs = final_outputs
 
     def build(self, data_iterator):
-        (batch_enc_in, batch_dec_in, batch_dec_out) = data_iterator.get_next()
+        batch_enc_in, batch_dec_in, batch_dec_out, batch_dec_length\
+            = data_iterator.get_next()
         # XXX: debug
         self._batch_enc_in = batch_enc_in
         self._batch_dec_in = batch_dec_in
@@ -109,4 +139,6 @@ class Seq2SeqModel:
         batch_enc_embed = self._build_encoder_embedding(batch_enc_in)
         encoder_output, encoder_state = self._build_encoder(batch_enc_embed)
         batch_dec_embed = self._build_decoder_embedding(batch_dec_in)
-        self._test = tf.shape(batch_dec_embed)[1] + 1
+        dec_proj = self._build_decoder_projection()
+        self._build_decoder(encoder_state, batch_dec_embed, batch_dec_length,
+                            dec_proj)

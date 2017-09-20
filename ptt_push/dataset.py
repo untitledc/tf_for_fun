@@ -67,14 +67,16 @@ class TrainDataset:
                                             tf.concat([t, [target_eos_id]], 0)))
 
         # append data sequence length, for seq2seq Helper
-        # dataset = dataset.map(lambda s, t_i, t_o: (s, t_i, t_o, tf.size(t_i)))
+        dataset = dataset.map(lambda s, t_i, t_o: (s, t_i, t_o, tf.size(t_i)))
 
-        # padded for mini-batch: source, target (in), target (out)
+        # padded for mini-batch: source, target (in), target (out), target len
+        # where we don't pad for target len
         dataset = dataset.padded_batch(
             batch_size=self._batch_size,
             padded_shapes=(tf.TensorShape([None]),
                            tf.TensorShape([None]),
-                           tf.TensorShape([None])),
-            padding_values=(source_eos_id, target_eos_id, target_eos_id)
+                           tf.TensorShape([None]),
+                           tf.TensorShape([])),
+            padding_values=(source_eos_id, target_eos_id, target_eos_id, 0)
         )
         return dataset

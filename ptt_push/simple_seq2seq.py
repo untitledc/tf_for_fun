@@ -8,7 +8,7 @@ import tensorflow as tf
 #BATCH_SIZE = 4
 BATCH_SIZE = 2
 EMBEDDING_SIZE = 3
-HIDDEN_SIZE = 5
+HIDDEN_SIZE = 10
 UNK_TOKEN = '<unk>'
 
 
@@ -47,14 +47,18 @@ def main(args):
         output = sess.run(
             (model._batch_enc_in,
              model._batch_dec_in,
-             model._test,
              model.encoder_emb_weight,
+             model.decoder_emb_weight,
              model.encoder_state,
-             model.encoder_output))
-        print(model._test)
-        print(output[0])
+             model.encoder_output,
+             model.batch_rnn_output,
+             model.batch_sample_id))
         print(output[1])
-        print(output[2])
+        print(output[3])
+        print(output[4])
+        print(output[5])
+        print(output[6])
+        print(output[7])
 
 
 if __name__ == '__main__':
