@@ -55,6 +55,10 @@ class Seq2SeqModel:
     def batch_sample_id(self):
         return self._final_outputs.sample_id
 
+    @property
+    def loss(self):
+        return self._loss
+
     def _build_encoder_embedding(self, batch_in_seq):
         """[batch, time] -> [batch, time, embed]"""
 
@@ -127,6 +131,21 @@ class Seq2SeqModel:
                 decoder, swap_memory=self._swap_memory_in_train)
 
             self._final_outputs = final_outputs
+            return final_outputs.rnn_output, final_outputs.sample_id
+
+    def _build_loss(self, logit, output, batch_output_length):
+        xent = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logit,
+                                                              labels=output)
+        # logit : [batch, time, hidden (or proj)]
+        # output: [batch, time]
+        # output_mask: [batch, time]
+        max_time = tf.shape(output)[1]
+        output_mask = tf.sequence_mask(batch_output_length, maxlen=max_time,
+                                       dtype=tf.float32)
+        loss = tf.reduce_sum(tf.reduce_mean(output_mask * xent, axis=0))
+        self._loss = loss
+
+        return loss
 
     def build(self, data_iterator):
         batch_enc_in, batch_dec_in, batch_dec_out, batch_dec_length\
@@ -140,5 +159,8 @@ class Seq2SeqModel:
         encoder_output, encoder_state = self._build_encoder(batch_enc_embed)
         batch_dec_embed = self._build_decoder_embedding(batch_dec_in)
         dec_proj = self._build_decoder_projection()
-        self._build_decoder(encoder_state, batch_dec_embed, batch_dec_length,
-                            dec_proj)
+        rnn_output, sample_id = self._build_decoder(
+            encoder_state, batch_dec_embed, batch_dec_length, dec_proj)
+
+        if self._mode == ModeKeys.TRAIN:
+            self._build_loss(rnn_output, batch_dec_out, batch_dec_length)
