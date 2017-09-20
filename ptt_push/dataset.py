@@ -66,6 +66,9 @@ class TrainDataset:
                                             tf.concat([[target_sos_id], t], 0),
                                             tf.concat([t, [target_eos_id]], 0)))
 
+        # append data sequence length, for seq2seq Helper
+        # dataset = dataset.map(lambda s, t_i, t_o: (s, t_i, t_o, tf.size(t_i)))
+
         # padded for mini-batch: source, target (in), target (out)
         dataset = dataset.padded_batch(
             batch_size=self._batch_size,

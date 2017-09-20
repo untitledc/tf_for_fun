@@ -5,9 +5,10 @@ from dataset import TrainDataset
 from model import Seq2SeqModel
 import tensorflow as tf
 
-BATCH_SIZE = 4
-EMBEDDING_SIZE = 1024
-HIDDEN_SIZE = 128
+#BATCH_SIZE = 4
+BATCH_SIZE = 2
+EMBEDDING_SIZE = 3
+HIDDEN_SIZE = 5
 UNK_TOKEN = '<unk>'
 
 
@@ -43,12 +44,17 @@ def main(args):
         sess.run(iterator.initializer)
         sess.run(tf.tables_initializer())
         sess.run(tf.global_variables_initializer())
-        print(model)
-        print(model.encoder_emb_weight)
-        print(model.encoder_state)
-        print(model.encoder_output)
-
-    pass
+        output = sess.run(
+            (model._batch_enc_in,
+             model._batch_dec_in,
+             model._test,
+             model.encoder_emb_weight,
+             model.encoder_state,
+             model.encoder_output))
+        print(model._test)
+        print(output[0])
+        print(output[1])
+        print(output[2])
 
 
 if __name__ == '__main__':
