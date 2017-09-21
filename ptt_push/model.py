@@ -4,24 +4,26 @@ import tensorflow as tf
 from tensorflow.contrib.learn import ModeKeys
 from tensorflow.contrib.rnn import BasicLSTMCell
 from tensorflow.contrib.seq2seq import BasicDecoder
-from tensorflow.contrib.seq2seq import TrainingHelper
+from tensorflow.contrib.seq2seq import TrainingHelper, GreedyEmbeddingHelper
 from tensorflow.contrib.seq2seq import dynamic_decode
 from tensorflow.python.layers.core import Dense
 
 
 class Seq2SeqModel:
     def __init__(self, source_vocab_size, target_vocab_size, embedding_size,
-                 hidden_state_size,
-                 mode=ModeKeys.TRAIN):
+                 hidden_state_size, batch_size, mode=ModeKeys.TRAIN):
         self._mode = mode
+        self._target_vocab_size = target_vocab_size
         # unknown + source eos for padding
         self._source_dim = source_vocab_size + 2
         # unknown + target sos/eos for decoder input/output
         self._target_dim = target_vocab_size + 3
         self._embedding_dim = embedding_size
         self._hidden_state_size = hidden_state_size
+        self._batch_size = batch_size
 
         self._swap_memory_in_train = False
+        self._max_decode_iterations = 20
 
     @property
     def encoder_emb_weight(self):
@@ -36,16 +38,16 @@ class Seq2SeqModel:
         return self._encoder_state
 
     @property
-    def encoder_output(self):
-        return self._encoder_output
-
-    @property
     def decoder_emb_weight(self):
         return self._decoder_emb_weight
 
     @property
     def batch_dec_embed(self):
         return self._batch_dec_embed
+
+    @property
+    def decoder_proj_layer(self):
+        return self._decoder_proj_layer
 
     @property
     def batch_rnn_output(self):
@@ -119,19 +121,33 @@ class Seq2SeqModel:
         if self._mode == ModeKeys.TRAIN:
             helper = TrainingHelper(inputs=batch_dec_embed,
                                     sequence_length=batch_dec_length)
-            decoder = BasicDecoder(decoder_cell, helper,
-                                   initial_state=encoder_state,
-                                   output_layer=output_projection)
+            max_iterations = None
+        elif self._mode == ModeKeys.INFER:
+            # FIXME: need to be consistent with dataset.py :(
+            tgt_sos_id = tf.constant(self._target_vocab_size+1, dtype=tf.int32)
+            tgt_eos_id = tf.constant(self._target_vocab_size+2, dtype=tf.int32)
+            helper = GreedyEmbeddingHelper(
+                batch_dec_embed,
+                start_tokens=tf.fill([self._batch_size], tgt_sos_id),
+                end_token=tgt_eos_id
+            )
+            max_iterations = self._max_decode_iterations
+        else:
+            raise NotImplementedError('Unsupported mode '+self._mode)
 
-            # encoder_state  : [batch, hidden]
-            # batch_dec_embed: [batch, time, embed]
-            # final_outputs.rnn_output: [batch, time, hidden (or proj)]
-            # final_outputs.sample_id : [batch, time]
-            final_outputs, _, _ = dynamic_decode(
-                decoder, swap_memory=self._swap_memory_in_train)
+        decoder = BasicDecoder(decoder_cell, helper,
+                               initial_state=encoder_state,
+                               output_layer=output_projection)
+        # encoder_state  : [batch, hidden]
+        # batch_dec_embed: [batch, time, embed]
+        # final_outputs.rnn_output: [batch, time, hidden (or proj)]
+        # final_outputs.sample_id : [batch, time]
+        final_outputs, _, _ = dynamic_decode(
+            decoder, maximum_iterations=max_iterations,
+            swap_memory=self._swap_memory_in_train)
 
-            self._final_outputs = final_outputs
-            return final_outputs.rnn_output, final_outputs.sample_id
+        self._final_outputs = final_outputs
+        return final_outputs.rnn_output, final_outputs.sample_id
 
     def _build_loss(self, logit, output, batch_output_length):
         xent = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logit,

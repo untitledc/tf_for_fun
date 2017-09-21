@@ -52,6 +52,7 @@ class TrainDataset:
 
         # combine two together
         dataset = Dataset.zip((src_dataset, tgt_dataset))
+        #dataset = dataset.shuffle(buffer_size=self._batch_size*1024, seed=1)
 
         # line -> words
         dataset = dataset.map(lambda s, t: (tf.string_split([s]).values,
@@ -79,4 +80,39 @@ class TrainDataset:
                            tf.TensorShape([])),
             padding_values=(source_eos_id, target_eos_id, target_eos_id, 0)
         )
+        return dataset
+
+
+class TestDataset:
+    def __init__(self, source_file, source_vocab_file,
+                 reverse_input=True, input_max=None):
+        self._source_file = source_file
+        self._source_vocab_file = source_vocab_file
+        self._reverse_input = reverse_input
+        self._input_max = input_max
+
+        # HACK: get vocabulary size
+        with open(source_vocab_file) as f:
+            self._source_vocab_size = len(f.readlines())
+
+    @property
+    def source_vocab_size(self):
+        return self._source_vocab_size
+
+    def get_tf_dataset(self):
+        source_vocab_map = lookup.index_table_from_file(self._source_vocab_file,
+                                                        num_oov_buckets=1)
+
+        # read lines of data files; they should have the same numbers of lines
+        dataset = TextLineDataset(self._source_file)
+
+        # line -> words
+        dataset = dataset.map(lambda s: tf.string_split([s]).values)
+
+        # words -> unique ids
+        dataset = dataset.map(lambda s: source_vocab_map.lookup(s))
+
+        # Infer 1 sentence at a time
+        dataset = dataset.batch(1)
+
         return dataset
