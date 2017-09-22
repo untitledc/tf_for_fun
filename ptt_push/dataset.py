@@ -84,10 +84,11 @@ class TrainDataset:
 
 
 class TestDataset:
-    def __init__(self, source_file, source_vocab_file,
+    def __init__(self, source_file, source_vocab_file, batch_size,
                  reverse_input=True, input_max=None):
         self._source_file = source_file
         self._source_vocab_file = source_vocab_file
+        self._batch_size = batch_size
         self._reverse_input = reverse_input
         self._input_max = input_max
 
@@ -102,8 +103,10 @@ class TestDataset:
     def get_tf_dataset(self):
         source_vocab_map = lookup.index_table_from_file(self._source_vocab_file,
                                                         num_oov_buckets=1)
+        # unknown_id is vocab_size
+        source_eos_id = tf.constant(self._source_vocab_size+1, dtype=tf.int64)
 
-        # read lines of data files; they should have the same numbers of lines
+        # read lines of data files
         dataset = TextLineDataset(self._source_file)
 
         # line -> words
@@ -112,7 +115,15 @@ class TestDataset:
         # words -> unique ids
         dataset = dataset.map(lambda s: source_vocab_map.lookup(s))
 
+        dataset = dataset.map(lambda s: (s, tf.size(s)))
+
         # Infer 1 sentence at a time
-        dataset = dataset.batch(1)
+        #dataset = dataset.batch(1)
+        dataset = dataset.padded_batch(
+            batch_size=self._batch_size,
+            padded_shapes=(tf.TensorShape([None]),
+                           tf.TensorShape([])),
+            padding_values=(source_eos_id, 0)
+        )
 
         return dataset

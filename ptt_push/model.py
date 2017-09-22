@@ -66,7 +66,7 @@ class Seq2SeqModel:
 
         # embedding weight
         encoder_emb_weight = tf.get_variable(
-            "encoder_emb_weight", shape=[self._source_dim, self._embedding_dim])
+            'encoder_emb_weight', shape=[self._source_dim, self._embedding_dim])
         self._encoder_emb_weight = encoder_emb_weight
 
         # (batch) one-hot -> (batch) embeddings
@@ -84,14 +84,18 @@ class Seq2SeqModel:
 
         # embedding weight
         decoder_emb_weight = tf.get_variable(
-            "decoder_emb_weight", shape=[self._target_dim, self._embedding_dim])
+            'decoder_emb_weight', shape=[self._target_dim, self._embedding_dim])
         self._decoder_emb_weight = decoder_emb_weight
+
+        # FIXME: not clean enough
+        if batch_in_seq is None:
+            return decoder_emb_weight, None
 
         # (batch) one-hot -> (batch) embeddings
         batch_dec_embed = tf.gather(decoder_emb_weight, batch_in_seq)
         self._batch_dec_embed = batch_dec_embed
 
-        return batch_dec_embed
+        return decoder_emb_weight, batch_dec_embed
 
     def _build_encoder(self, batch_enc_embed):
         encoder_cell = BasicLSTMCell(self._hidden_state_size)
@@ -108,13 +112,13 @@ class Seq2SeqModel:
 
     def _build_decoder_projection(self):
         proj_layer = Dense(self._target_dim, use_bias=False,
-                           name="output_projection")
+                           name='output_projection')
         self._decoder_proj_layer = proj_layer
 
         return proj_layer
 
     def _build_decoder(self, encoder_state, batch_dec_embed, batch_dec_length,
-                       output_projection):
+                       output_projection, decoder_emb_weight=None):
         decoder_cell = BasicLSTMCell(self._hidden_state_size)
 
         # https://www.tensorflow.org/api_guides/python/contrib.seq2seq
@@ -127,7 +131,7 @@ class Seq2SeqModel:
             tgt_sos_id = tf.constant(self._target_vocab_size+1, dtype=tf.int32)
             tgt_eos_id = tf.constant(self._target_vocab_size+2, dtype=tf.int32)
             helper = GreedyEmbeddingHelper(
-                batch_dec_embed,
+                decoder_emb_weight,
                 start_tokens=tf.fill([self._batch_size], tgt_sos_id),
                 end_token=tgt_eos_id
             )
@@ -164,19 +168,31 @@ class Seq2SeqModel:
         return loss
 
     def build(self, data_iterator):
-        batch_enc_in, batch_dec_in, batch_dec_out, batch_dec_length\
-            = data_iterator.get_next()
-        # XXX: debug
-        self._batch_enc_in = batch_enc_in
-        self._batch_dec_in = batch_dec_in
-        self._batch_dec_out = batch_dec_out
-
-        batch_enc_embed = self._build_encoder_embedding(batch_enc_in)
-        encoder_output, encoder_state = self._build_encoder(batch_enc_embed)
-        batch_dec_embed = self._build_decoder_embedding(batch_dec_in)
-        dec_proj = self._build_decoder_projection()
-        rnn_output, sample_id = self._build_decoder(
-            encoder_state, batch_dec_embed, batch_dec_length, dec_proj)
-
         if self._mode == ModeKeys.TRAIN:
+            batch_enc_in, batch_dec_in, batch_dec_out, batch_dec_length\
+                = data_iterator.get_next()
+            # XXX: debug
+            self._batch_enc_in = batch_enc_in
+            self._batch_dec_in = batch_dec_in
+            self._batch_dec_out = batch_dec_out
+
+            batch_enc_embed = self._build_encoder_embedding(batch_enc_in)
+            encoder_output, encoder_state = self._build_encoder(batch_enc_embed)
+            _, batch_dec_embed = self._build_decoder_embedding(batch_dec_in)
+            dec_proj = self._build_decoder_projection()
+            rnn_output, sample_id = self._build_decoder(
+                encoder_state, batch_dec_embed, batch_dec_length, dec_proj)
+
             self._build_loss(rnn_output, batch_dec_out, batch_dec_length)
+        elif self._mode == ModeKeys.INFER:
+            batch_enc_in, _ = data_iterator.get_next()
+            # XXX: debug
+            self._batch_enc_in = batch_enc_in
+            batch_enc_embed = self._build_encoder_embedding(batch_enc_in)
+            encoder_output, encoder_state = self._build_encoder(batch_enc_embed)
+            decoder_emb_weight, _ = self._build_decoder_embedding(None)
+            dec_proj = self._build_decoder_projection()
+            self._build_decoder(
+                encoder_state, None, None, dec_proj, decoder_emb_weight)
+        else:
+            raise NotImplementedError('Unsupported mode '+self._mode)
