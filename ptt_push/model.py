@@ -11,7 +11,7 @@ from tensorflow.python.layers.core import Dense
 
 class Seq2SeqModel:
     def __init__(self, source_vocab_size, target_vocab_size, embedding_size,
-                 hidden_state_size, batch_size, mode=ModeKeys.TRAIN):
+                 hidden_state_size, mode=ModeKeys.TRAIN):
         self._mode = mode
         self._target_vocab_size = target_vocab_size
         # unknown + source eos for padding
@@ -20,7 +20,6 @@ class Seq2SeqModel:
         self._target_dim = target_vocab_size + 3
         self._embedding_dim = embedding_size
         self._hidden_state_size = hidden_state_size
-        self._batch_size = batch_size
 
         self._swap_memory_in_train = False
         self._max_decode_iterations = 20
@@ -122,7 +121,8 @@ class Seq2SeqModel:
         return proj_layer
 
     def _build_decoder(self, encoder_state, batch_dec_embed, batch_dec_length,
-                       output_projection, decoder_emb_weight=None):
+                       output_projection, this_batch_size=None,
+                       decoder_emb_weight=None):
         decoder_cell = BasicLSTMCell(self._hidden_state_size)
 
         # https://www.tensorflow.org/api_guides/python/contrib.seq2seq
@@ -138,8 +138,9 @@ class Seq2SeqModel:
 
             helper = GreedyEmbeddingHelper(
                 decoder_emb_weight,
-                start_tokens=tf.fill([self._batch_size], tgt_sos_id),
+                start_tokens=tf.fill([this_batch_size], tgt_sos_id),
                 end_token=tgt_eos_id
+
             )
             max_iterations = self._max_decode_iterations
         else:
@@ -194,11 +195,13 @@ class Seq2SeqModel:
             batch_enc_in = data_iterator.get_next()
             # XXX: debug
             self._batch_enc_in = batch_enc_in
+
             batch_enc_embed = self._build_encoder_embedding(batch_enc_in)
             encoder_output, encoder_state = self._build_encoder(batch_enc_embed)
             decoder_emb_weight, _ = self._build_decoder_embedding(None)
             dec_proj = self._build_decoder_projection()
-            self._build_decoder(
-                encoder_state, None, None, dec_proj, decoder_emb_weight)
+            self._build_decoder(encoder_state, None, None, dec_proj,
+                                this_batch_size=tf.shape(batch_enc_in)[0],
+                                decoder_emb_weight=decoder_emb_weight)
         else:
             raise NotImplementedError('Unsupported mode '+self._mode)

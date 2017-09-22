@@ -70,8 +70,7 @@ def train(args):
         model = Seq2SeqModel(source_vocab_size=dataset.source_vocab_size,
                              target_vocab_size=dataset.target_vocab_size,
                              embedding_size=EMBEDDING_SIZE,
-                             hidden_state_size=HIDDEN_SIZE,
-                             batch_size=BATCH_SIZE)
+                             hidden_state_size=HIDDEN_SIZE)
         model.build(iterator)
 
         train_step = get_train_step(model.loss, LEARNING_RATE,
@@ -95,6 +94,7 @@ def train(args):
                 try:
                     _, loss_val = sess.run([train_step, model.loss])
                     batch_i += 1
+                    return 1
                 except tf.errors.OutOfRangeError:
                     if batch_amount is None:
                         batch_amount = batch_i
@@ -112,7 +112,7 @@ def infer(args):
         target_vocab_size = len(f.readlines())
 
     with infer_graph.as_default():
-        dataset = TestDataset(args.infer_source_file, args.source_vocab_file, 7)
+        dataset = TestDataset(args.infer_source_file, args.source_vocab_file, 4)
 
         iterator = dataset.get_tf_dataset().make_initializable_iterator()
 
@@ -120,7 +120,6 @@ def infer(args):
                              target_vocab_size=target_vocab_size,
                              embedding_size=EMBEDDING_SIZE,
                              hidden_state_size=HIDDEN_SIZE,
-                             batch_size=7,
                              mode=ModeKeys.INFER)
         model.build(iterator)
 
