@@ -116,11 +116,6 @@ class TestDataset:
         dataset = dataset.map(lambda s: source_vocab_map.lookup(s))
 
         # Infer 1 sentence at a time
-        #dataset = dataset.batch(1)
-        dataset = dataset.padded_batch(
-            batch_size=self._batch_size,
-            padded_shapes=tf.TensorShape([None]),
-            padding_values=source_eos_id
-        )
+        dataset = dataset.batch(1)
 
         return dataset

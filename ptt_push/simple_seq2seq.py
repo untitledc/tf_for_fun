@@ -112,7 +112,7 @@ def infer(args):
         target_vocab_size = len(f.readlines())
 
     with infer_graph.as_default():
-        dataset = TestDataset(args.infer_source_file, args.source_vocab_file, 4)
+        dataset = TestDataset(args.infer_source_file, args.source_vocab_file, 1)
 
         iterator = dataset.get_tf_dataset().make_initializable_iterator()
 
