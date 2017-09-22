@@ -58,6 +58,10 @@ class Seq2SeqModel:
         return self._final_outputs.sample_id
 
     @property
+    def target_eos_id(self):
+        return self._target_eos_id
+
+    @property
     def loss(self):
         return self._loss
 
@@ -128,8 +132,10 @@ class Seq2SeqModel:
             max_iterations = None
         elif self._mode == ModeKeys.INFER:
             # FIXME: need to be consistent with dataset.py :(
+            self._target_eos_id = self._target_vocab_size+2
             tgt_sos_id = tf.constant(self._target_vocab_size+1, dtype=tf.int32)
-            tgt_eos_id = tf.constant(self._target_vocab_size+2, dtype=tf.int32)
+            tgt_eos_id = tf.constant(self._target_eos_id, dtype=tf.int32)
+
             helper = GreedyEmbeddingHelper(
                 decoder_emb_weight,
                 start_tokens=tf.fill([self._batch_size], tgt_sos_id),

@@ -141,9 +141,16 @@ def infer(args):
 
         while True:
             try:
-                output = sess.run(output_words)
-                for row in output:
-                    print(' '.join([b.decode() for b in row]))
+                output, out_ids = sess.run([output_words, model.batch_sample_id])
+                eos_id = model.target_eos_id
+                for sentence, ids in zip(output, out_ids):
+                    if eos_id in ids:
+                        end_index = ids.tolist().index(eos_id)
+                    else:
+                        end_index = None
+                    translation = ' '.join([
+                        b.decode() for b in sentence[:end_index]])
+                    print(translation)
             except tf.errors.OutOfRangeError:
                 break
 
