@@ -8,13 +8,12 @@ import tensorflow as tf
 from tensorflow.contrib import lookup
 from tensorflow.contrib.learn import ModeKeys
 
-#BATCH_SIZE = 4
-BATCH_SIZE = 1
+BATCH_SIZE = 4
 EMBEDDING_SIZE = 3
 HIDDEN_SIZE = 5
 LEARNING_RATE = 0.01
 MAX_GRADIENT_NORM = 5.0
-EPOCH_MAX = 100
+EPOCH_MAX = 200
 
 UNK_TOKEN = '<unk>'
 
@@ -105,8 +104,6 @@ def train(args):
             print('Epoch {}, loss: {}'.format(epoch_i, loss_val))
 
         model_saver.save(sess, 'tmp_model/model.ckpt')
-        weight_debug(sess, iterator, model)
-        print(sess.run(model.decoder_emb_weight))
 
 
 def infer(args):
@@ -115,7 +112,7 @@ def infer(args):
         target_vocab_size = len(f.readlines())
 
     with infer_graph.as_default():
-        dataset = TestDataset(args.infer_source_file, args.source_vocab_file, 2)
+        dataset = TestDataset(args.infer_source_file, args.source_vocab_file, 7)
 
         iterator = dataset.get_tf_dataset().make_initializable_iterator()
 
@@ -123,13 +120,13 @@ def infer(args):
                              target_vocab_size=target_vocab_size,
                              embedding_size=EMBEDDING_SIZE,
                              hidden_state_size=HIDDEN_SIZE,
-                             batch_size=2,
+                             batch_size=7,
                              mode=ModeKeys.INFER)
         model.build(iterator)
 
         reverse_target_vocab_table = lookup.index_to_string_table_from_file(
             args.target_vocab_file, default_value='<UNK>')
-        # XXX TextFileStringTableInitializer uses int64 keys
+        # XXX: TextFileStringTableInitializer uses int64 keys
         output_words = reverse_target_vocab_table.lookup(
             tf.cast(model.batch_sample_id, tf.int64))
 
@@ -141,15 +138,14 @@ def infer(args):
         sess.run(iterator.initializer)
 
         model_saver.restore(sess, 'tmp_model/model.ckpt')
-        print(sess.run(model.decoder_emb_weight))
 
-        output = sess.run([
-            model._batch_enc_in,
-            model.batch_sample_id,
-            output_words
-        ])
-        print(output)
-        # weight_debug(sess, iterator, model)
+        while True:
+            try:
+                output = sess.run(output_words)
+                for row in output:
+                    print(' '.join([b.decode() for b in row]))
+            except tf.errors.OutOfRangeError:
+                break
 
 
 def main(args):

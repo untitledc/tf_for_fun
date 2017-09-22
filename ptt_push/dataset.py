@@ -115,15 +115,12 @@ class TestDataset:
         # words -> unique ids
         dataset = dataset.map(lambda s: source_vocab_map.lookup(s))
 
-        dataset = dataset.map(lambda s: (s, tf.size(s)))
-
         # Infer 1 sentence at a time
         #dataset = dataset.batch(1)
         dataset = dataset.padded_batch(
             batch_size=self._batch_size,
-            padded_shapes=(tf.TensorShape([None]),
-                           tf.TensorShape([])),
-            padding_values=(source_eos_id, 0)
+            padded_shapes=tf.TensorShape([None]),
+            padding_values=source_eos_id
         )
 
         return dataset

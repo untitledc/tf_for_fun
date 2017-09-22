@@ -185,7 +185,7 @@ class Seq2SeqModel:
 
             self._build_loss(rnn_output, batch_dec_out, batch_dec_length)
         elif self._mode == ModeKeys.INFER:
-            batch_enc_in, _ = data_iterator.get_next()
+            batch_enc_in = data_iterator.get_next()
             # XXX: debug
             self._batch_enc_in = batch_enc_in
             batch_enc_embed = self._build_encoder_embedding(batch_enc_in)
