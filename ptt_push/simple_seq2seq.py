@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+from __future__ import print_function
+
 import argparse
 from dataset import TrainDataset, TestDataset
 from model import Seq2SeqModel
@@ -8,12 +10,12 @@ import tensorflow as tf
 from tensorflow.contrib import lookup
 from tensorflow.contrib.learn import ModeKeys
 
-BATCH_SIZE = 4
+BATCH_SIZE = 32
 EMBEDDING_SIZE = 3
-HIDDEN_SIZE = 5
+HIDDEN_SIZE = 10
 LEARNING_RATE = 0.01
 MAX_GRADIENT_NORM = 5.0
-EPOCH_MAX = 200
+EPOCH_MAX = 10
 
 UNK_TOKEN = '<unk>'
 
@@ -30,6 +32,8 @@ def parse_args():
     parser.add_argument('-tv', '--target_vocab', dest='target_vocab_file',
                         help='Share with source_vocab if empty')
     parser.add_argument('--infer_source', dest='infer_source_file')
+    parser.add_argument('--infer_out', dest='infer_out_file',
+                        help='Write inference outcomes to a file')
 
     return parser.parse_args()
 
@@ -60,6 +64,7 @@ def weight_debug(sess, iterator, model):
 
 
 def train(args):
+    print('=== Building training graph... ===')
     with train_graph.as_default():
         dataset = TrainDataset(args.source_file, args.target_file,
                                args.source_vocab_file, args.target_vocab_file,
@@ -78,6 +83,7 @@ def train(args):
 
         model_saver = tf.train.Saver(var_list=tf.global_variables())
 
+    print('=== Run training... ===')
     with tf.Session(graph=train_graph) as sess:
         sess.run(tf.tables_initializer())
         sess.run(tf.global_variables_initializer())
@@ -94,7 +100,6 @@ def train(args):
                 try:
                     _, loss_val = sess.run([train_step, model.loss])
                     batch_i += 1
-                    return 1
                 except tf.errors.OutOfRangeError:
                     if batch_amount is None:
                         batch_amount = batch_i
@@ -131,6 +136,14 @@ def infer(args):
 
         model_saver = tf.train.Saver(var_list=tf.global_variables())
 
+    infer_f_out = None
+    if args.infer_out_file is not None:
+        try:
+            infer_f_out = open(args.infer_out_file, mode='w')
+        except IOError:
+            print('Cannot open {} for writing inference.'.format(
+                args.infer_out_file))
+
     with tf.Session(graph=infer_graph) as sess:
         sess.run(tf.tables_initializer())
         sess.run(tf.global_variables_initializer())
@@ -149,7 +162,7 @@ def infer(args):
                         end_index = None
                     translation = ' '.join([
                         b.decode() for b in sentence[:end_index]])
-                    print(translation)
+                    print(translation, file=infer_f_out)
             except tf.errors.OutOfRangeError:
                 break
 

@@ -1,7 +1,100 @@
-c b b a c
-aaa a a
-Z X b Y
-C c CC b
+c b
+b b a c b b
+a c
+a c c b b b a
+c b b b b b a a
+b b a b b b a b
+c a a
+d c c
+b b a c c a
+c d b b b
+b b a b b b a c c b
+b b b b a c c c
+b b b b a a c c
+d b b b b a b b a
+d a a
+b b a a c
+c b b b b b a c
+b b a a
+b b b a d b
+b b a b b b b
+c d
+d c b b a
+c b b b b
+b b a a c a a
+c c d
+b b a c b
+b b b b b a b
+d a c a c a
+c b b a b
+c b b b a b b a b
+d c b b a a
+d b b a b b a b b a a
+a c b b a c
+b b a a
+b b b b b
+b b a c b b b a b
+b b b a b b b b b
+c c c
+a c b b a c
+b b b a c b b b b a
+c b
 c a
-C b CC b
-b b a b b b a
+c c a
+c b b b a b b a b
+c a
+b b a b b a a c a a
+c b
+b b a b b a d b b a
+c b b a d b b a a
+b b a c b b
+a c b b b a c b
+b b a c c a c b
+b b b a b b b a b b b
+b b b a a c a
+b b b a c a
+a c d
+b b a b b a c b b b b a
+b b b a a
+b b b a
+c b b b b a
+d c c b b
+b b a b b a c a
+c b b b a
+d a c c
+b b b b
+a c b
+b b b a c
+b b b a b b b b
+b b a d c b b b
+a c c b b
+c c d b b b
+b b b a d b b a
+b b a b b a b
+b b b b b a b b b b b a
+b b a d b b a c b
+b b b b b a a a
+b b b b b b
+d b b b
+c b b a a c
+a c b b
+b b b a
+a c b b a c b
+b b b a
+b b b b a b b b b a b
+b b b b a b b b a c
+b b b a c d
+c c a
+b b a b b a c a
+b b a b b a c b b b a b
+c b b b b a
+d d
+b b a b b b a c
+c a
+b b b a a c b b a
+c c b
+c c b
+b b b b b b a b
+a c c a a
+b b b a b
+a c

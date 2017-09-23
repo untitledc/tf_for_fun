@@ -1,9 +1,4 @@
-a
-X
-CC
-aaa
-Z
-c
-Y
+d
 b
-C
+a
+c
